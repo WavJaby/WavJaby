@@ -1,4 +1,4 @@
-package com.wavjaby.github.api.repos;
+package com.wavjaby.github.rest.repos;
 
 public enum Visibility {
     PUBLIC,

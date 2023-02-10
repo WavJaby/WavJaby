@@ -1,97 +1,116 @@
 package com.wavjaby.github;
 
-import com.wavjaby.github.api.users.UserRepos;
-import com.wavjaby.github.obj.UserData;
-import com.wavjaby.json.JsonArray;
-import com.wavjaby.json.JsonObject;
-import com.wavjaby.github.api.repos.RepoLanguages;
+import com.wavjaby.github.rest.repos.RepoLanguagesAction;
+import com.wavjaby.github.rest.users.UserAction;
+import com.wavjaby.github.rest.users.UserReposAction;
+import com.wavjaby.github.obj.User;
+import sun.net.www.protocol.https.HttpsURLConnectionImpl;
 
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.net.HttpURLConnection;
+import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.stream.Collectors;
 
-public class Api {
-    private final Map<String, GithubApiResult> apiCache = new HashMap<>();
-    private final Map<Long, UserData> userCache = new HashMap<>();
-    public final String clientId, clientSecret;
+public class Api implements Runnable {
+    private final Map<String, RestRequest<?>> apiCache = new HashMap<>();
+    private final String clientId, clientSecret;
+
+    private final ExecutorService resultPool = MyExecutor.newCachedThreadPoolExecutor();
+    private final ExecutorService fetchPool = MyExecutor.newFixedThreadExecutor(8);
+
+    private final LinkedBlockingDeque<RestRequest<?>> requestQueue = new LinkedBlockingDeque<>();
+
+    private final Thread thread;
+    private final Map<Integer, User> userCache = new HashMap<>();
 
     public Api(String clientId, String clientSecret) {
         this.clientId = clientId;
         this.clientSecret = clientSecret;
+
+        thread = new Thread(this);
+        thread.start();
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            thread.interrupt();
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }));
     }
 
-    private HttpURLConnection getApi(String path, GithubApiResult resultCache) {
-        try {
-            HttpURLConnection connection = (HttpURLConnection) new URL("https://api.github.com" + path).openConnection();
-            connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
-            connection.setRequestProperty("Accept", "application/vnd.github+json");
-            connection.setRequestProperty("Authorization", "Basic " + Base64.getEncoder().encodeToString((clientId + ':' + clientSecret).getBytes()));
-
-            if (resultCache != null) {
-                connection.setRequestProperty("If-None-Match", resultCache.etag);
-//                System.out.println(resultCache.etag);
+    @Override
+    public void run() {
+        while (!thread.isInterrupted()) {
+            final RestRequest<?> restRequest;
+            try {
+                restRequest = requestQueue.take();
+            } catch (InterruptedException e) {
+                thread.interrupt();
+                return;
             }
 
-            connection.connect();
-            if (connection.getResponseCode() == 304)
-                return null;
+            fetchPool.submit(() -> {
+                try {
+                    HttpsURLConnectionImpl conn = (HttpsURLConnectionImpl) new URL("https://api.github.com" + restRequest.path).openConnection();
+                    conn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
+                    conn.setRequestProperty("Accept", "application/vnd.github+json");
+                    conn.setRequestProperty("Authorization", "Basic " + Base64.getEncoder().encodeToString((clientId + ':' + clientSecret).getBytes()));
+                    final RestRequest<?> restRequestCache = apiCache.get(restRequest.path);
+                    if (restRequestCache != null)
+                        conn.setRequestProperty("If-None-Match", restRequestCache.etag);
 
-//            for (Map.Entry<String, List<String>> i : connection.getHeaderFields().entrySet())
-//                System.out.println(i.getKey() + ": " + i.getValue());
-//            System.out.println(connection.getHeaderField("X-Ratelimit-Limit"));
-            System.out.println(connection.getHeaderField("X-Ratelimit-Remaining"));
-            System.out.println(connection.getHeaderField("X-Ratelimit-Used"));
-//            System.out.println(connection.getHeaderField("X-Ratelimit-Reset"));
+                    conn.connect();
 
-            return connection;
-        } catch (Exception e) {
-            e.printStackTrace();
+                    int code = conn.getResponseCode();
+                    // Result not change
+                    if (code == 304 && restRequestCache != null) {
+                        restRequest.resultNotChange(restRequestCache);
+                    }
+                    // Result changed
+                    else if (code == 200) {
+                        restRequest.createNewResult(conn.getInputStream(), conn.getHeaderField("etag"));
+                        apiCache.put(restRequest.path, restRequest);
+                    } else {
+                        System.err.println("Unknown response code: " + code + "\n" +
+                                new BufferedReader(new InputStreamReader(conn.getErrorStream()))
+                                        .lines().collect(Collectors.joining("\n")));
+                        return;
+                    }
+//                System.out.println(conn.getHeaderField("X-Ratelimit-Remaining"));
+//                System.out.println(conn.getHeaderField("X-Ratelimit-Used"));
+                    resultPool.submit(restRequest::success);
+                } catch (IOException e) {
+                    resultPool.submit(() -> restRequest.failed.accept(e));
+                }
+            });
         }
-        return null;
+        System.out.println("Request queue close");
     }
 
-    public UserRepos getUserRepos(String userName) {
-        String path = "/users/" + userName + "/repos";
-        GithubApiResult resultCache = apiCache.get(path);
-        HttpURLConnection connection = getApi(path, resultCache);
-        if (connection == null)
-            return (UserRepos) resultCache;
-
-        UserRepos userRepos;
-        try {
-            userRepos = new UserRepos(
-                    new JsonArray(connection.getInputStream()),
-                    connection.getHeaderField("Etag")
-            );
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
-        }
-        apiCache.put(path, userRepos);
-        return userRepos;
+    public void addRequest(RestRequest<?> restRequest) {
+        requestQueue.offer(restRequest);
     }
 
-    public RepoLanguages getRepoLanguages(String userName, String repoName) {
-        String path = "/repos/" + userName + '/' + repoName + "/languages";
-        GithubApiResult resultCache = apiCache.get(path);
-        HttpURLConnection connection = getApi(path, resultCache);
-        if (connection == null)
-            return (RepoLanguages) resultCache;
+    public User getUserByID(int userID) {
+        return userCache.get(userID);
+    }
 
-        RepoLanguages repoLanguages;
-        try {
-            repoLanguages = new RepoLanguages(
-                    new JsonObject(connection.getInputStream()),
-                    connection.getHeaderField("Etag")
-            );
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
-        }
-        apiCache.put(path, repoLanguages);
-        return repoLanguages;
+    public UserAction getUser(String userName) {
+        return new UserAction(userName, this);
+    }
+
+    public UserReposAction getUserRepos(String userName) {
+        return new UserReposAction(userName, this);
+    }
+
+    public RepoLanguagesAction getRepoLanguages(String userName, String repoName) {
+        return new RepoLanguagesAction(userName, repoName, this);
     }
 }

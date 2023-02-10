@@ -1,11 +1,12 @@
 package com.wavjaby.github.obj;
 
+import com.wavjaby.github.Api;
 import com.wavjaby.json.JsonObject;
 
 import java.time.OffsetDateTime;
 
 @SuppressWarnings("unused")
-public class SimpleUserData {
+public class SimpleUser {
     // Required
     final String login;
     final int id;
@@ -20,7 +21,7 @@ public class SimpleUserData {
     final String email;
     OffsetDateTime starred_at;
 
-    public SimpleUserData(JsonObject data) {
+    public SimpleUser(JsonObject data, Api api) {
         login = data.getString("login");
         id = data.getInt("id");
         node_id = data.getString("node_id");
@@ -34,8 +35,12 @@ public class SimpleUserData {
             starred_at = OffsetDateTime.parse(data.getString("starred_at"));
     }
 
-    public String getLogin() {
+    public String getName() {
         return login;
+    }
+
+    public String getDisplayName() {
+        return name;
     }
 
     public int getId() {
@@ -60,10 +65,6 @@ public class SimpleUserData {
 
     public boolean isSite_admin() {
         return site_admin;
-    }
-
-    public String getName() {
-        return name;
     }
 
     public String getEmail() {

@@ -1,11 +1,12 @@
 package com.wavjaby.github.obj;
 
+import com.wavjaby.github.Api;
 import com.wavjaby.json.JsonObject;
 
 import java.time.OffsetDateTime;
 
 @SuppressWarnings("unused")
-public class UserData extends SimpleUserData {
+public class User extends SimpleUser {
     // Required
     final String company;
     final String blog;
@@ -27,13 +28,13 @@ public class UserData extends SimpleUserData {
     int disk_usage;
     int collaborators;
     boolean two_factor_authentication;
-    //TODO: PlaImpl plan;
+    //TODO: PlaData plan;
     OffsetDateTime suspended_at;
     boolean business_plus;
     String ldap_dn;
 
-    public UserData(JsonObject data) {
-        super(data);
+    public User(JsonObject data, Api api) {
+        super(data, api);
         company = data.getString("company");
         blog = data.getString("blog");
         location = data.getString("location");
@@ -67,11 +68,11 @@ public class UserData extends SimpleUserData {
         return bio;
     }
 
-    public int getPublic_repos() {
+    public int getPublicRepos() {
         return public_repos;
     }
 
-    public int getPublic_gists() {
+    public int getPublicGists() {
         return public_gists;
     }
 
@@ -83,51 +84,11 @@ public class UserData extends SimpleUserData {
         return following;
     }
 
-    public OffsetDateTime getCreated_at() {
+    public OffsetDateTime getCreatedAt() {
         return created_at;
     }
 
-    public OffsetDateTime getUpdated_at() {
+    public OffsetDateTime getUpdatedAt() {
         return updated_at;
-    }
-
-    public String getTwitter_username() {
-        return twitter_username;
-    }
-
-    public int getPrivate_gists() {
-        return private_gists;
-    }
-
-    public int getTotal_private_repos() {
-        return total_private_repos;
-    }
-
-    public int getOwned_private_repos() {
-        return owned_private_repos;
-    }
-
-    public int getDisk_usage() {
-        return disk_usage;
-    }
-
-    public int getCollaborators() {
-        return collaborators;
-    }
-
-    public boolean isTwo_factor_authentication() {
-        return two_factor_authentication;
-    }
-
-    public OffsetDateTime getSuspended_at() {
-        return suspended_at;
-    }
-
-    public boolean isBusiness_plus() {
-        return business_plus;
-    }
-
-    public String getLdap_dn() {
-        return ldap_dn;
     }
 }

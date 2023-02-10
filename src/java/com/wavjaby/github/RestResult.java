@@ -1,9 +1,9 @@
 package com.wavjaby.github;
 
-public abstract class GithubApiResult {
+public abstract class RestResult {
     final String etag;
 
-    protected GithubApiResult(String etag) {
+    protected RestResult(String etag) {
         this.etag = etag;
     }
 }
