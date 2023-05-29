@@ -1,9 +1,9 @@
 package com.wavjaby.github;
 
+import com.wavjaby.github.obj.User;
 import com.wavjaby.github.rest.repos.RepoLanguagesAction;
 import com.wavjaby.github.rest.users.UserAction;
 import com.wavjaby.github.rest.users.UserReposAction;
-import com.wavjaby.github.obj.User;
 import sun.net.www.protocol.https.HttpsURLConnectionImpl;
 
 import java.io.BufferedReader;
@@ -36,6 +36,8 @@ public class Api implements Runnable {
         thread = new Thread(this);
         thread.start();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if(thread.isInterrupted())
+                return;
             thread.interrupt();
             try {
                 thread.join();
@@ -53,7 +55,7 @@ public class Api implements Runnable {
                 restRequest = requestQueue.take();
             } catch (InterruptedException e) {
                 thread.interrupt();
-                return;
+                break;
             }
 
             fetchPool.submit(() -> {
@@ -92,6 +94,17 @@ public class Api implements Runnable {
             });
         }
         System.out.println("Request queue close");
+    }
+
+    public void close() {
+        thread.interrupt();
+        try {
+            thread.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        fetchPool.shutdown();
+        resultPool.shutdown();
     }
 
     public void addRequest(RestRequest<?> restRequest) {
